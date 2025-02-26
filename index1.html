@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>다각형 그리기 + 점 재배치(더블클릭 대신 한 번 더 클릭)</title>
+  <style>
+    html, body {
+      margin: 0; 
+      padding: 0;
+      width: 100%; 
+      height: 100%;
+      background-color: black;
+      overflow: hidden;
+    }
+    .container {
+      position: relative;
+      width: 100%; 
+      height: 100%;
+    }
+
+    /* 그리드 레이어 */
+    .grid-layer {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+      background-image:
+        linear-gradient(to right, #70728d 1px, transparent 1px),
+        linear-gradient(to bottom, #70728d 1px, transparent 1px);
+      background-size: 10px 10px;
+      background-repeat: repeat;
+    }
+
+    /* 방생성 / 방생성 완료 버튼 */
+    .room-create-btn, .room-finish-btn {
+      position: absolute;
+      top: 10px;
+      padding: 8px 12px;
+      font-size: 14px;
+      cursor: pointer;
+      z-index: 10;
+    }
+    .room-create-btn {
+      left: 10px;
+      display: inline-block; /* 초기 표시 */
+    }
+    .room-finish-btn {
+      left: 100px;
+      display: none; /* 초기 숨김 */
+    }
+
+    /* 오른쪽 상단 + 아이콘 (bedL 생성) */
+    .plus-icon {
+      position: absolute;
+      top: 0; right: 0;
+      width: 50px; height: 50px;
+      font-size: 36px; line-height: 50px;
+      text-align: center; color: white;
+      background-color: #007700;
+      cursor: pointer; user-select: none;
+      z-index: 2; /* 맨 위 */
+    }
+
+    /* bedL 사각형 스타일 */
+    .bedL {
+      position: absolute;
+      width: 100px; height: 230px;
+      background-color: rgba(255, 255, 255, 0.8);
+      border: 2px solid white;
+      box-sizing: border-box;
+      cursor: move;
+      transform-origin: 50% 50%;
+      z-index: 1; /* 폴리곤(z-index=0) 뒤 */
+    }
+
+    /* 회전 핸들 */
+    .rotate-handle-cw, .rotate-handle-ccw {
+      position: absolute;
+      top: 0;
+      width: 20px; height: 20px;
+      background-color: #ffcc00;
+      font-size: 16px; 
+      line-height: 20px;
+      text-align: center;
+      cursor: pointer;
+    }
+    .rotate-handle-cw { left: 0; }
+    .rotate-handle-ccw { right: 0; }
+
+    /* (고정/이동) 버튼 */
+    .toggle-button {
+      position: absolute;
+      bottom: 0; right: 0;
+      width: 50px; height: 20px;
+      background-color: #00ccff;
+      font-weight: bold; 
+      font-size: 14px;
+      line-height: 20px; 
+      text-align: center;
+      cursor: pointer;
+    }
+
+    /* "입력" 버튼 (왼쪽 하단) */
+    .input-btn {
+      position: absolute;
+      bottom: 0; left: 0;
+      width: 40px; height: 20px;
+      background-color: #ffcfcf;
+      font-size: 14px; 
+      line-height: 20px;
+      text-align: center;
+      cursor: pointer;
+    }
+
+    /* "닫기(close)" 버튼 (상단 중앙) */
+    .close-button {
+      position: absolute;
+      top: 0; left: 50%;
+      transform: translateX(-50%);
+      width: 25px; height: 25px;
+      background-color: red;
+      color: white;
+      text-align: center;
+      line-height: 25px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    /* 입력 폼 레이어(#inputL) */
+    #inputL {
+      position: absolute;
+      display: none;
+      width: 400px; height: 500px;
+      background-color: rgba(255, 255, 255, 0.9);
+      border-radius: 10px;
+      border: 2px solid #ccc;
+      box-sizing: border-box;
+      z-index: 3;
+      padding: 20px;
+    }
+    #inputL form label {
+      display: block;
+      margin-bottom: 10px;
+    }
+    .buttons {
+      position: absolute;
+      bottom: 10px; right: 10px;
+    }
+    .buttons button {
+      margin-left: 10px;
+    }
+
+    /* 다각형 표시용 SVG (뒤로) */
+    .drawing-svg {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+      z-index: 0;
+    }
+    #myPolygon {
+      fill: rgba(255, 0, 0, 0.3);
+      stroke: red;
+      stroke-width: 2;
+    }
+
+    /* 점(10x10) 스타일 */
+    .point {
+      position: absolute;
+      width: 10px; height: 10px;
+      background-color: red;
+      transform: translate(-50%, -50%);
+      z-index: 0;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- 그리드 -->
+    <div class="grid-layer"></div>
+
+    <!-- 왼쪽 상단: 방생성, 방생성 완료 버튼 -->
+    <button class="room-create-btn">방생성</button>
+    <button class="room-finish-btn">방생성 완료</button>
+
+    <!-- 오른쪽 상단 + 아이콘 (bedL) -->
+    <div class="plus-icon">+</div>
+
+    <!-- 입력 폼 -->
+    <div id="inputL">
+      <form>
+        <label>이름: <input type="text" /></label>
+        <label>나이: <input type="number" /></label>
+        <label>입원일: <input type="date" /></label>
+        <label>성별:
+          <select>
+            <option>남</option>
+            <option>여</option>
+          </select>
+        </label>
+        <label>보호자 이름: <input type="text" /></label>
+        <label>보호자 휴대폰번호: <input type="tel" /></label>
+
+        <div class="buttons">
+          <button type="button" id="saveBtn">저장</button>
+          <button type="button" id="cancelBtn">취소</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- 폴리곤(SVG) -->
+    <svg class="drawing-svg">
+      <polygon id="myPolygon"></polygon>
+    </svg>
+  </div>
+
+  <script>
+    // ------ 기존 bedL 코드 (생성, 드래그, 회전, 고정, etc.) ------
+    const container = document.querySelector('.container');
+    const plusIcon = document.querySelector('.plus-icon');
+    const inputLayer = document.getElementById('inputL');
+    const saveBtn = document.getElementById('saveBtn');
+    const cancelBtn = document.getElementById('cancelBtn');
+
+    saveBtn.addEventListener('click', () => { inputLayer.style.display = 'none'; });
+    cancelBtn.addEventListener('click', () => { inputLayer.style.display = 'none'; });
+
+    let bedCounter = 1;
+    function createBedL() {
+      let isEditing = true;
+      let isDragging = false;
+      let offsetX = 0, offsetY = 0;
+      let currentRotation = 0;
+
+      const box = document.createElement('div');
+      box.classList.add('bedL');
+      box.id = 'bedL' + (bedCounter++);
+      box.setAttribute('name', 'bedName');
+
+      const cx = window.innerWidth / 2;
+      const cy = window.innerHeight / 2;
+      box.style.left = (cx - 50) + 'px';
+      box.style.top = (cy - 115) + 'px';
+
+      box.innerHTML = `
+        <div class="rotate-handle-cw">↻</div>
+        <div class="rotate-handle-ccw">↺</div>
+        <div class="toggle-button">고정</div>
+        <div class="close-button">X</div>
+      `;
+      container.appendChild(box);
+
+      const cw = box.querySelector('.rotate-handle-cw');
+      const ccw = box.querySelector('.rotate-handle-ccw');
+      const toggleBtn = box.querySelector('.toggle-button');
+      const closeBtn = box.querySelector('.close-button');
+
+      let inputBtn = null;
+
+      box.addEventListener('mousedown', (e) => {
+        if (!isEditing) return;
+        if ([cw, ccw, toggleBtn, closeBtn, inputBtn].includes(e.target)) {
+          return;
+        }
+        isDragging = true;
+        offsetX = e.offsetX;
+        offsetY = e.offsetY;
+      });
+      document.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        let x = e.clientX - offsetX;
+        let y = e.clientY - offsetY;
+        x = Math.round(x / 10) * 10;
+        y = Math.round(y / 10) * 10;
+        box.style.left = x + 'px';
+        box.style.top = y + 'px';
+      });
+      document.addEventListener('mouseup', () => {
+        isDragging = false;
+      });
+
+      cw.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (!isEditing) return;
+        currentRotation += 45;
+        box.style.transform = `rotate(${currentRotation}deg)`;
+      });
+      ccw.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (!isEditing) return;
+        currentRotation -= 45;
+        box.style.transform = `rotate(${currentRotation}deg)`;
+      });
+
+      toggleBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (isEditing) {
+          // 이동 -> 고정
+          isEditing = false;
+          toggleBtn.textContent = '이동';
+          inputBtn = document.createElement('div');
+          inputBtn.classList.add('input-btn');
+          inputBtn.textContent = '입력';
+          box.appendChild(inputBtn);
+
+          inputBtn.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            const rect = box.getBoundingClientRect();
+            const contRect = container.getBoundingClientRect();
+            const px = rect.right - contRect.left + 10;
+            const py = rect.top - contRect.top;
+            inputLayer.style.left = px + 'px';
+            inputLayer.style.top = py + 'px';
+            inputLayer.style.display = 'block';
+          });
+        } else {
+          // 고정 -> 이동
+          isEditing = true;
+          toggleBtn.textContent = '고정';
+          if (inputBtn) {
+            box.removeChild(inputBtn);
+            inputBtn = null;
+          }
+          inputLayer.style.display = 'none';
+        }
+      });
+
+      closeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        box.remove();
+      });
+    }
+
+    plusIcon.addEventListener('click', () => {
+      createBedL();
+    });
+
+
+    // ------ 다각형(방) 로직 + "점을 다시 클릭하면 그 점의 위치를 새로 지정" ------
+    const roomCreateBtn = document.querySelector('.room-create-btn');
+    const roomFinishBtn = document.querySelector('.room-finish-btn');
+    const myPolygon = document.getElementById('myPolygon');
+    const drawingSvg = document.querySelector('.drawing-svg');
+
+    let isDrawing = false;     // 다각형 생성 모드
+    let waitNextClick = false; // 방생성 버튼 누른 뒤, 다음 클릭부터 시작
+    let points = [];
+    let dragIndex = -1;        // 마우스로 드래그 중인 점 인덱스
+    let selectedPointIndex = -1; // "한 번 더 클릭"으로 위치 재지정할 점
+
+    // (A) 방생성 버튼
+    roomCreateBtn.addEventListener('click', () => {
+      // 버튼 보이기/숨기기
+      roomCreateBtn.style.display = 'none';
+      roomFinishBtn.style.display = 'inline-block';
+
+      // 다각형 초기화
+      points = [];
+      myPolygon.setAttribute('points', '');
+
+      // 다음 클릭부터 본격 점 찍기
+      isDrawing = false;
+      waitNextClick = true;
+      selectedPointIndex = -1; 
+    });
+
+    // (B) 방생성 완료 버튼
+    roomFinishBtn.addEventListener('click', () => {
+      isDrawing = false;
+      waitNextClick = false;
+      dragIndex = -1;
+      selectedPointIndex = -1;
+
+      // 버튼 토글
+      roomCreateBtn.style.display = 'inline-block';
+      roomFinishBtn.style.display = 'none';
+    });
+
+    // (C) 컨테이너 클릭 -> 점 생성/재배치
+    container.addEventListener('click', (e) => {
+      // (1) 방생성 버튼을 누른 후 첫 클릭은 "다각형 모드 시작"만
+      if (waitNextClick) {
+        isDrawing = true;
+        waitNextClick = false;
+        // 첫 클릭은 점을 찍지 않음
+        return;
+      }
+      // (2) 이미 다각형 모드가 아니라면 무시
+      if (!isDrawing) return;
+
+      // (3) 만약 "점을 재배치하려고 선택(selectedPointIndex>=0)"했다면
+      //     새 점을 생성하지 말고, 해당 점의 위치를 클릭 좌표로 옮긴다.
+      if (selectedPointIndex >= 0 && selectedPointIndex < points.length) {
+        const x = e.clientX;
+        const y = e.clientY;
+        // 점 이동
+        points[selectedPointIndex].x = x;
+        points[selectedPointIndex].y = y;
+        points[selectedPointIndex].div.style.left = x + 'px';
+        points[selectedPointIndex].div.style.top = y + 'px';
+
+        selectedPointIndex = -1; // 재배치 끝
+        updatePolygon();
+        return; // 새 점 생성은 하지 않음
+      }
+
+      // (4) 점을 드래그 중이면(마우스 다운) 새 점 생성 안 함
+      if (dragIndex !== -1) return;
+
+      // (5) 여기까지 왔다면 "새 점을 추가"하는 상황
+      const x = e.clientX;
+      const y = e.clientY;
+      const pointDiv = document.createElement('div');
+      pointDiv.classList.add('point');
+      pointDiv.style.left = x + 'px';
+      pointDiv.style.top = y + 'px';
+
+      // 점 클릭 -> "이 점을 다시 클릭하면 이동 모드"로
+      pointDiv.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        // 만약 다각형 모드 중이면 이 점을 "선택"한다.
+        if (!isDrawing) return;
+        // 이미 다른 점을 선택 중이었다면 취소하고 다시 선택
+        selectedPointIndex = points.findIndex(p => p.div === pointDiv);
+      });
+
+      // 드래그(마우스 다운)
+      pointDiv.addEventListener('mousedown', (ev) => {
+        ev.stopPropagation();
+        dragIndex = points.findIndex(p => p.div === pointDiv);
+      });
+
+      container.appendChild(pointDiv);
+
+      points.push({ x, y, div: pointDiv });
+      updatePolygon();
+    });
+
+    // (D) 드래그 로직
+    document.addEventListener('mousemove', (e) => {
+      if (dragIndex < 0 || dragIndex >= points.length) return;
+      const x = e.clientX;
+      const y = e.clientY;
+      points[dragIndex].x = x;
+      points[dragIndex].y = y;
+      points[dragIndex].div.style.left = x + 'px';
+      points[dragIndex].div.style.top = y + 'px';
+      updatePolygon();
+    });
+    document.addEventListener('mouseup', () => {
+      dragIndex = -1;
+    });
+
+    // (E) 폴리곤 갱신
+    function updatePolygon() {
+      const str = points.map(p => `${p.x},${p.y}`).join(' ');
+      myPolygon.setAttribute('points', str);
+    }
+  </script>
+</body>
+</html>
